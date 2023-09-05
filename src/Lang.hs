@@ -27,24 +27,34 @@ import           Data.List.Extra                ( nubSort )
 data STm info ty var =
     SV info var
   | SConst info Const
-  | SLam info (var, ty) (STm info ty var)
+  | SLam info [(var, ty)] (STm info ty var)
   | SApp info (STm info ty var) (STm info ty var)
   | SPrint info String (STm info ty var)
   | SBinaryOp info BinaryOp (STm info ty var) (STm info ty var)
-  | SFix info (var, ty) (var, ty) (STm info ty var)
+  | SFix info (var, ty) [(var, ty)] (STm info ty var)
   | SIfZ info (STm info ty var) (STm info ty var) (STm info ty var)
   | SLet info (var, ty) (STm info ty var) (STm info ty var)
+  | SLetLam info (var, ty) [(var, ty)] (STm info ty var) (STm info ty var) Rec
   deriving (Show, Functor)
+
+data Rec = Yes | No deriving Show
+
+data STy = 
+      SDeclTy Name
+    | SNatTy
+    | SFunTy STy STy
+    deriving (Show,Eq)
 
 -- | AST de Tipos
 data Ty =
       NatTy
     | FunTy Ty Ty
+    | DeclTy Name
     deriving (Show,Eq)
 
 type Name = String
 
-type STerm = STm Pos Ty Name -- ^ 'STm' tiene 'Name's como variables ligadas y libres y globales, guarda posición  
+type STerm = STm Pos STy Name -- ^ 'STm' tiene 'Name's como variables ligadas y libres y globales, guarda posición  
 
 newtype Const = CNat Int
   deriving Show
@@ -53,10 +63,36 @@ data BinaryOp = Add | Sub
   deriving Show
 
 -- | tipo de datos de declaraciones, parametrizado por el tipo del cuerpo de la declaración
+data SDecl a = SDecl
+  { sDeclPos  :: Pos
+  , sDeclName :: Name
+  , sDeclTy   :: STy
+  , sDeclBody :: a
+  }
+  | SDeclLam
+  { sDeclLamPos  :: Pos
+  , sDeclLamName :: Name
+  , sDeclLamArg  :: [(Name, STy)]
+  , sDeclLamTy   :: STy
+  , sDeclLamBody :: a
+  , sDeclLamRec  :: Rec
+  }
+  | SDeclType
+  { sDeclTypePos  :: Pos
+  , sDeclTypeName :: Name 
+  , sDeclTypeTy   :: STy
+  }
+  deriving (Show, Functor)
+
 data Decl a = Decl
   { declPos  :: Pos
   , declName :: Name
   , declBody :: a
+  }
+  | TyDecl
+  { declPos  :: Pos
+  , declName :: Name
+  , declTy :: Ty
   }
   deriving (Show, Functor)
 
