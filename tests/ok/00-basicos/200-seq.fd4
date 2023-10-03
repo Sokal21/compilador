@@ -1,4 +1,4 @@
-let f = fun (n:Nat) ->
+let f: Nat -> Nat = fun (n:Nat) ->
   let (w:Nat) = 10 in
   let (x:Nat) = 20 in
   let (a:Nat) = print "hola" 1 in
@@ -11,4 +11,4 @@ let f = fun (n:Nat) ->
   let (g:Nat) = print "hola" 1 in
   z
 
-let x = print "res = " (f 100)
+let x: Nat = print "res = " (f 100)

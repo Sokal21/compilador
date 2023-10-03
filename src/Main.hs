@@ -35,21 +35,24 @@ import Eval ( eval )
 import PPrint ( pp , ppTy, ppDecl, freshSTy )
 import MonadFD4
 import TypeChecker ( tc, tcDecl )
+import CEK (seek, value2term)
+import Debug.Trace (trace)
 
 prompt :: String
 prompt = "FD4> "
 
-
+type EvalFn m = TTerm -> m TTerm
 
 -- | Parser de banderas
 parseMode :: Parser (Mode,Bool)
 parseMode = (,) <$>
       (flag' Typecheck ( long "typecheck" <> short 't' <> help "Chequear tipos e imprimir el término")
-  -- <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'k' <> help "Ejecutar interactivamente en la CEK")
+      <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'k' <> help "Ejecutar interactivamente en la CEK")
   -- <|> flag' Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
   -- <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
       <|> flag Eval        Eval        (long "eval" <> short 'e' <> help "Evaluar programa")
+      <|> flag CEKEval     CEKEval      (long "cek" <> short 'l' <> help "Evaluar programa con CEK")
   -- <|> flag' CC ( long "cc" <> short 'c' <> help "Compilar a código C")
   -- <|> flag' Canon ( long "canon" <> short 'n' <> help "Imprimir canonicalización")
   -- <|> flag' Assembler ( long "assembler" <> short 'a' <> help "Imprimir Assembler resultante")
@@ -73,7 +76,9 @@ main = execParser opts >>= go
 
     go :: (Mode,Bool,[FilePath]) -> IO ()
     go (Interactive,opt,files) =
-              runOrFail (Conf opt Interactive) (runInputT defaultSettings (repl files))
+              runOrFail (Conf opt Interactive) (runInputT defaultSettings (repl eval files))
+    go (InteractiveCEK,opt,files) =
+              runOrFail (Conf opt InteractiveCEK) (runInputT defaultSettings (repl evalCEK files))
     go (m,opt, files) =
               runOrFail (Conf opt m) $ mapM_ compileFile files
 
@@ -86,8 +91,8 @@ runOrFail c m = do
       exitWith (ExitFailure 1)
     Right v -> return v
 
-repl :: (MonadFD4 m, MonadMask m) => [FilePath] -> InputT m ()
-repl args = do
+repl :: (MonadFD4 m, MonadMask m) =>  EvalFn m -> [FilePath] -> InputT m ()
+repl f args = do
        lift $ setInter True
        lift $ catchErrors $ mapM_ compileFile args
        s <- lift get
@@ -102,12 +107,12 @@ repl args = do
                Just "" -> loop
                Just x -> do
                        c <- liftIO $ interpretCommand x
-                       b <- lift $ catchErrors $ handleCommand c
+                       b <- lift $ catchErrors $ handleCommand f c
                        maybe loop (`when` loop) b
 
 loadFile ::  MonadFD4 m => FilePath -> m [SDecl STerm]
 loadFile f = do
-    let filename = reverse(dropWhile isSpace (reverse f))
+    let filename = reverse (dropWhile isSpace (reverse f))
     x <- liftIO $ catch (readFile filename)
                (\e -> do let err = show (e :: IOException)
                          hPutStrLn stderr ("No se pudo abrir el archivo " ++ filename ++ ": " ++ err)
@@ -129,9 +134,11 @@ parseIO filename p x = case runP p x filename of
                   Left e  -> throwError (ParseErr e)
                   Right r -> return r
 
-evalDecl :: MonadFD4 m => Decl TTerm -> m (Decl TTerm)
-evalDecl (Decl p x e) = do
-    e' <- eval e
+evalDecl :: MonadFD4 m =>  EvalFn m -> Decl TTerm -> m (Decl TTerm)
+evalDecl f t@(TyDecl {}) = do
+    return t
+evalDecl f (Decl p x e) = do
+    e' <- f e
     return (Decl p x e')
 
 handleDecl ::  MonadFD4 m => SDecl STerm -> m ()
@@ -156,15 +163,37 @@ handleDecl d = do
               -- td' <- if opt then optimize td else td
               ppterm <- ppDecl td  --td'
               printFD4 ppterm
+          CEKEval -> do
+              td <- typecheckDecl d
+              -- td' <- if opt then optimizeDecl td else return td
+              ed <- evalDecl evalCEK td
+              case ed of
+                (Decl p x tt) -> do
+                  addDecl ed
+                (TyDecl p x tt) -> do
+                  addTy x tt
+              addDecl ed
           Eval -> do
               td <- typecheckDecl d
               -- td' <- if opt then optimizeDecl td else return td
-              ed <- evalDecl td
-              addDecl ed
+              ed <- evalDecl eval td
+              case ed of
+                (Decl p x tt) -> do
+                  addDecl ed
+                (TyDecl p x tt) -> do
+                  addTy x tt
+          InteractiveCEK -> do
+              dd <- typecheckDecl d
+              case dd of
+                (Decl p x tt) -> do
+                  te <- seek tt [] []
+                  addDecl (Decl p x (value2term te))
+                (TyDecl p x tt) -> do
+                  addTy x tt
 
       where
         typecheckDecl :: MonadFD4 m => SDecl STerm -> m (Decl TTerm)
-        typecheckDecl t = do 
+        typecheckDecl t = do
           e <- elabDecl t
           tcDecl e
         -- typecheckDecl (SDeclLam p n args ty t r) = tcDecl (Decl p x (elab t))
@@ -227,8 +256,8 @@ helpTxt cs
 
 -- | 'handleCommand' interpreta un comando y devuelve un booleano
 -- indicando si se debe salir del programa o no.
-handleCommand ::  MonadFD4 m => Command  -> m Bool
-handleCommand cmd = do
+handleCommand ::  MonadFD4 m =>  EvalFn m -> Command  -> m Bool
+handleCommand ef cmd = do
    s@GlEnv {..} <- get
    case cmd of
        Quit   ->  return False
@@ -238,26 +267,32 @@ handleCommand cmd = do
                       return True
        Compile c ->
                   do  case c of
-                          CompileInteractive e -> compilePhrase e
+                          CompileInteractive e -> compilePhrase ef e
                           CompileFile f        -> compileFile f
                       return True
        Reload ->  eraseLastFileDecls >> (getLastFile >>= compileFile) >> return True
        PPrint e   -> printPhrase e >> return True
        Type e    -> typeCheckPhrase e >> return True
 
-compilePhrase ::  MonadFD4 m => String -> m ()
-compilePhrase x = do
+compilePhrase ::  MonadFD4 m =>  EvalFn m -> String -> m ()
+compilePhrase f x = do
     dot <- parseIO "<interactive>" declOrTm x
     case dot of
       Left d  -> handleDecl d
-      Right t -> handleTerm t
+      Right t -> handleTerm f t
 
-handleTerm ::  MonadFD4 m => STerm -> m ()
-handleTerm t = do
+evalCEK ::  MonadFD4 m => TTerm -> m TTerm
+evalCEK t = do
+  te <- seek t [] []
+  _ <- trace (show te) return ()
+  return $ value2term te
+
+handleTerm ::  MonadFD4 m => EvalFn m -> STerm -> m ()
+handleTerm f t = do
          t' <- elab t
          s <- get
          tt <- tc t' (tyEnv s) (types s)
-         te <- eval tt
+         te <- f tt
          ppte <- pp te
          printFD4 (ppte ++ " : " ++ ppTy (freshSTy (getTy tt)))
 

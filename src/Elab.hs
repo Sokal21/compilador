@@ -74,6 +74,10 @@ elab' env (SLetLam p (f, fty) args d b No) =
 elab' env (SLetLam p (f, fty) args d b Yes) =
   elab' env $ SLet p (f, fty) (SFix p (f, fty) args d) b
 
+types :: [(Name, STy)] -> STy -> STy
+types args v = foldr f v args
+  where f (_, vty) = SFunTy vty
+
 elabDecl :: MonadFD4 m => SDecl STerm -> m (Decl Term)
 elabDecl (SDecl p n sty sb) = do
   b <- elab sb
@@ -82,5 +86,8 @@ elabDecl (SDeclType p n sty) = do
   return $ TyDecl p n (elabTy sty)
 elabDecl (SDeclLam p n args ty b No) =
   elabDecl (SDecl p n ty (SLam p args b))
-elabDecl (SDeclLam p n args ty b Yes) =
-  elabDecl (SDecl p n ty (SFix p (n, ty) args b))
+elabDecl (SDeclLam p n [] ty b Yes) = error "un parametro en fix es necesario" 
+elabDecl (SDeclLam p n args@[(x,xty)] ty b Yes) =
+  elabDecl (SDecl p n ty (SFix p (n, SFunTy xty ty) args b))
+elabDecl (SDeclLam p n ((x,xty):xs) ty b Yes) =
+  elabDecl (SDeclLam p n [(x,xty)] (types xs ty) (SLam p xs b) Yes)
