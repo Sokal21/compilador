@@ -12,6 +12,7 @@ module Global where
 import Lang
 
 type TyEnv = [(Name,Ty)]
+type Env = [(Name,Ty)]
 
 data GlEnv = GlEnv {
   inter :: Bool,        --  ^ True, si estamos en modo interactivo.
@@ -36,8 +37,8 @@ data Mode =
   | Eval
   | CEKEval
   | InteractiveCEK
-  -- | Bytecompile
-  -- | RunVM
+  | Bytecompile
+  | RunVM
   -- | CC
   -- | Canon
   -- | Assembler

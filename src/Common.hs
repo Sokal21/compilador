@@ -39,3 +39,8 @@ abort s = error ("INTERNAL ERROR: " ++ s)
 infixl 1 |>
 (|>) :: a -> (a -> b) -> b
 x |> f = f x
+
+lookUpIndex :: Int -> [a] -> Maybe a
+lookUpIndex _ [] = Nothing
+lookUpIndex 0 (a : xs) = Just a
+lookUpIndex n (a : xs) = lookUpIndex (n - 1) xs

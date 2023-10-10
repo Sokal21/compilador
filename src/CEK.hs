@@ -1,6 +1,6 @@
 module CEK where
 
-import Common (Pos (NoPos))
+import Common (Pos (NoPos), lookUpIndex)
 import Data.List (intercalate)
 import Lang
 import MonadFD4 (MonadFD4, lookupDecl, printFD4)
@@ -25,10 +25,6 @@ data Frame
 
 type Kont = [Frame]
 
-lookUpIndex :: Int -> [a] -> Maybe a
-lookUpIndex _ [] = Nothing
-lookUpIndex 0 (a : xs) = Just a
-lookUpIndex n (a : xs) = lookUpIndex (n - 1) xs
 
 seek :: (MonadFD4 m) => TTerm -> CEKEnv -> Kont -> m CEKValue
 seek (Print _ s t) env kont = seek t env $ KPrint s : kont
