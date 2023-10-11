@@ -11,7 +11,8 @@ module Main where
 
 -- import Control.Monad
 
-import Bytecompile (bcRead, bcWrite, bytecompileModule, runBC)
+-- import Bytecompile (bcRead, bcWrite, bytecompileModule, runBC, fileExtesion)
+import Bytecompile8b (bcRead, bcWrite, bytecompileModule, runBC, fileExtesion)
 import CEK (seek, value2term)
 import Control.Exception (IOException, catch)
 import Control.Monad.Catch (MonadMask)
@@ -28,7 +29,7 @@ import Lang
 import MonadFD4
 import Options.Applicative
 import PPrint (freshSTy, pp, ppDecl, ppTy)
-import Parse (P, decl, declOrTm, program, runP, tm)
+import Parse (P, declOrTm, program, runP, tm)
 import System.Console.Haskeline (InputT, defaultSettings, getInputLine, runInputT)
 import System.Exit (ExitCode (ExitFailure), exitWith)
 import System.FilePath (dropExtension)
@@ -152,7 +153,7 @@ compileBytecode f = do
   decls <- loadFile f
   tcdecl <- mapM tcAndAdd decls
   bc <- bytecompileModule tcdecl
-  liftIO $ bcWrite bc (dropExtension f ++ ".bc32")
+  liftIO $ bcWrite bc (dropExtension f ++ fileExtesion)
   where
     tcAndAdd d = do
       tcd <- typecheckDecl d

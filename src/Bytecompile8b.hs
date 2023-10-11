@@ -12,12 +12,13 @@
 --
 -- Este módulo permite compilar módulos a la Macchina. También provee
 -- una implementación de la Macchina para ejecutar el bytecode.
-module Bytecompile (Bytecode, runBC, bcWrite, bcRead, bytecompileModule, showBC, fileExtesion) where
+module Bytecompile8b (Bytecode, runBC, bcWrite, bcRead, bytecompileModule, showBC, fileExtesion) where
 
 import Common (lookUpIndex)
-import Data.Binary (Binary (get, put), Word32, decode, encode)
-import Data.Binary.Get (getWord32le, isEmpty)
-import Data.Binary.Put (putWord32le)
+import Data.Binary (Binary (get, put), Word8, decode, encode, getWord8)
+import Data.Binary.Get (isEmpty)
+import Data.Binary.Put (putWord8)
+import Data.Bits
 import qualified Data.ByteString.Lazy as BS
 import Data.Char
 import Data.List (intercalate)
@@ -26,17 +27,17 @@ import MonadFD4
 import Subst
 
 fileExtesion :: String
-fileExtesion = ".bc32"
+fileExtesion = ".bc8"
 
-type Opcode = Int
+type Opcode = Word8
 
-type Bytecode = [Int]
+type Bytecode = [Word8]
 
-newtype Bytecode32 = BC {un32 :: [Word32]}
+newtype Bytecode8 = BC {un8 :: [Word8]}
 
 {- Esta instancia explica como codificar y decodificar Bytecode de 32 bits -}
-instance Binary Bytecode32 where
-  put (BC bs) = mapM_ putWord32le bs
+instance Binary Bytecode8 where
+  put (BC bs) = mapM_ putWord8 bs
   get = go
     where
       go =
@@ -45,7 +46,7 @@ instance Binary Bytecode32 where
           if empty
             then return $ BC []
             else do
-              x <- getWord32le
+              x <- getWord8
               BC xs <- go
               return $ BC (x : xs)
 
@@ -65,8 +66,6 @@ entero, por ejemplo:
 pattern NULL = 0
 
 pattern RETURN = 1
-
-pattern CONST = 2
 
 pattern ACCESS = 3
 
@@ -94,12 +93,40 @@ pattern PRINTN = 14
 
 pattern JUMP = 15
 
+pattern BYTE = 16
+
+pattern WORD = 17
+
+pattern LONG = 18
+
+decompose32 :: Int -> Bytecode
+decompose32 n =
+  let b1 = fromIntegral (n `shiftR` 24)
+      b2 = fromIntegral ((n `shiftR` 16) .&. 0xFF)
+      b3 = fromIntegral ((n `shiftR` 8) .&. 0xFF)
+      b4 = fromIntegral (n .&. 0xFF)
+   in assemble b1 b2 b3 b4
+  where
+    assemble 0 0 0 b4 = [BYTE, b4]
+    assemble 0 0 b3 b4 = [WORD, b3, b4]
+    assemble b1 b2 b3 b4 = [LONG, b1, b2, b3, b4]
+
+recompose32 :: Word8 -> Word8 -> Word8 -> Word8 -> Int
+recompose32 a b c d =
+  let a' = fromIntegral a `shiftL` 24
+      b' = fromIntegral b `shiftL` 16
+      c' = fromIntegral c `shiftL` 8
+      d' = fromIntegral d
+   in a' + b' + c' + d'
+
 -- función util para debugging: muestra el Bytecode de forma más legible.
 showOps :: Bytecode -> [String]
 showOps [] = []
 showOps (NULL : xs) = "NULL" : showOps xs
 showOps (RETURN : xs) = "RETURN" : showOps xs
-showOps (CONST : i : xs) = ("CONST " ++ show i) : showOps xs
+showOps (BYTE : i : xs) = ("BYTE " ++ show (recompose32 0 0 0 i)) : showOps xs
+showOps (WORD : i : j : xs) = ("WORD " ++ show (recompose32 0 0 i j)) : showOps xs
+showOps (LONG : k : l : i : j : xs) = ("LONG " ++ show (recompose32 k l i j)) : showOps xs
 showOps (ACCESS : i : xs) = ("ACCESS " ++ show i) : showOps xs
 showOps (FUNCTION : i : xs) = ("FUNCTION len=" ++ show i) : showOps xs
 showOps (CALL : xs) = "CALL" : showOps xs
@@ -125,9 +152,9 @@ opToBcc Add = [ADD]
 opToBcc Sub = [SUB]
 
 bcc :: (MonadFD4 m) => TTerm -> m Bytecode
-bcc (V _ (Bound num)) = return [ACCESS, num]
+bcc (V _ (Bound num)) = return $ ACCESS : decompose32 num
 bcc (V _ _) = error "No podes entrar aca, papu"
-bcc (Const _ (CNat num)) = return [CONST, num]
+bcc (Const _ (CNat num)) = return $ decompose32 num
 bcc (BinaryOp _ op lt rt) = do
   bcl <- bcc lt
   bcr <- bcc rt
@@ -141,10 +168,10 @@ bcc (App _ ft vt) = do
   return $ bcf ++ bcv ++ [CALL]
 bcc (Lam _ _ _ (Sc1 tt)) = do
   bctt <- bcc tt
-  return $ [FUNCTION] ++ [length bctt + 1] ++ bctt ++ [RETURN]
+  return $ [FUNCTION] ++ decompose32 (length bctt + 1) ++ bctt ++ [RETURN]
 bcc (Fix _ _ _ _ _ (Sc2 bt)) = do
   bcbt <- bcc bt
-  return $ [FUNCTION] ++ [length bcbt + 1] ++ bcbt ++ [RETURN, FIX]
+  return $ [FUNCTION] ++ decompose32 (length bcbt + 1) ++ bcbt ++ [RETURN, FIX]
 bcc (Let _ _ _ tt (Sc1 dt)) = do
   bctt <- bcc tt
   bcdt <- bcc dt
@@ -153,15 +180,15 @@ bcc (IfZ _ ct tt et) = do
   bcct <- bcc ct
   bctt <- bcc tt
   bcet <- bcc et
-  return $ bcct ++ [IFZ, length bctt + 2] ++ bctt ++ [JUMP, length bcet] ++ bcet
+  return $ bcct ++ [IFZ] ++ decompose32 (length bctt + 2) ++ bctt ++ [JUMP] ++ decompose32 (length bcet) ++ bcet
 
 -- ord/chr devuelven los codepoints unicode, o en otras palabras
 -- la codificación UTF-32 del caracter.
 string2bc :: String -> Bytecode
-string2bc = map ord
+string2bc = map (fromIntegral . ord)
 
 bc2string :: Bytecode -> String
-bc2string = map chr
+bc2string = map (chr . fromIntegral)
 
 skipTyDecl :: Module -> Maybe Module
 skipTyDecl [] = Nothing
@@ -207,7 +234,7 @@ bcWrite bs filename = BS.writeFile filename (encode $ BC $ fromIntegral <$> bs)
 
 -- | Lee de un archivo y lo decodifica a bytecode
 bcRead :: FilePath -> IO Bytecode
-bcRead filename = (map fromIntegral <$> un32) . decode <$> BS.readFile filename
+bcRead filename = (map fromIntegral <$> un8) . decode <$> BS.readFile filename
 
 type Env = [Val]
 
@@ -218,16 +245,24 @@ data Val = I Int | Fun Env Bytecode | RA Env Bytecode
 eFix :: Bytecode -> Env -> Env
 eFix cf e = Fun (eFix cf e) cf : e
 
+readNumber :: Bytecode -> (Int, Bytecode)
+readNumber (BYTE : n : bc) = (recompose32 0 0 0 n, bc)
+readNumber (WORD : n : m : bc) = (recompose32 0 0 n m, bc)
+readNumber (LONG : k : l : n : m : bc) = (recompose32 k l n m, bc)
+
 evalBC :: (MonadFD4 m) => Bytecode -> Env -> Stack -> m Int
 evalBC (STOP : bc) e ((I r) : s) = return r
-evalBC (CONST : n : bc) e s = evalBC bc e (I n : s)
+-- evalBC (CONST : n : bc) e s = evalBC bc e (I n : s)
+evalBC bc@(BYTE : _) e s = evalBC (snd (readNumber bc)) e (I (fst (readNumber bc)) : s)
+evalBC bc@(WORD : _) e s = evalBC (snd (readNumber bc)) e (I (fst (readNumber bc)) : s)
+evalBC bc@(LONG : _) e s = evalBC (snd (readNumber bc)) e (I (fst (readNumber bc)) : s)
 evalBC (ADD : bc) e (I l : I r : s) = evalBC bc e (I (l + r) : s)
 evalBC (SUB : bc) e (I l : I r : s) = evalBC bc e (I (r - l) : s)
-evalBC (ACCESS : i : bc) e s = case lookUpIndex i e of
+evalBC (ACCESS : bc) e s = case lookUpIndex (fst (readNumber bc)) e of
   Nothing -> error "No pudimos indexar la variable, papu"
-  Just n -> evalBC bc e (n : s)
+  Just n -> evalBC (snd (readNumber bc)) e (n : s)
 evalBC (CALL : bc) e (v : Fun ef bcf : s) = evalBC bcf (v : ef) (RA e bc : s)
-evalBC (FUNCTION : bl : bc) e s = evalBC (drop bl bc) e (Fun e (take bl bc) : s)
+evalBC (FUNCTION : bc) e s = evalBC (uncurry drop (readNumber bc)) e (Fun e (uncurry take (readNumber bc)) : s)
 evalBC (RETURN : _) _ (v : (RA re rbc) : s) = evalBC rbc re (v : s)
 evalBC (SHIFT : bc) e (v : s) = evalBC bc (v : e) s
 evalBC (DROP : bc) (v : e) s = evalBC bc e s
@@ -238,10 +273,10 @@ evalBC (PRINT : bc) e s = do
   printFD4 $ bc2string (takeWhile (/= NULL) bc)
   evalBC (tail (dropWhile (/= NULL) bc)) e s
 evalBC (FIX : bc) e ((Fun fe fb) : s) = evalBC bc e (Fun (eFix fb fe) fb : s)
-evalBC (IFZ : tl : bc) e ((I v) : s)
+evalBC (IFZ : bc) e ((I v) : s)
   | v == 0 = evalBC bc e s
-  | otherwise = evalBC (drop tl bc) e s
-evalBC (JUMP : n : bc) e s = evalBC (drop n bc) e s
+  | otherwise = evalBC (uncurry drop (readNumber bc)) e s
+evalBC (JUMP : bc) e s = evalBC (uncurry drop (readNumber bc)) e s
 evalBC _ _ _ = error "El programa es invalido, papu"
 
 runBC :: (MonadFD4 m) => Bytecode -> m ()
