@@ -22,7 +22,7 @@ data GlEnv = GlEnv {
   cantDecl :: Int,      -- ^ Cantidad de declaraciones desde la última carga
   glb :: [Decl TTerm],  -- ^ Entorno con declaraciones globales
   types :: TyEnv -- ^ Entorno con declaraciones de tipos
-}
+} deriving Show
 
 -- ^ Entorno de tipado de declaraciones globales
 tyEnv :: GlEnv ->  [(Name,Ty)]
@@ -35,8 +35,6 @@ data Mode =
     Interactive
   | Typecheck
   | Eval
-  | CEKEval
-  | InteractiveCEK
   | Bytecompile
   | RunVM
   -- | CC
@@ -45,9 +43,10 @@ data Mode =
   -- | Build
 data Conf = Conf {
     opt :: Bool,          --  ^ True, si estan habilitadas las optimizaciones.
-    modo :: Mode
+    modo :: Mode,
+    cek :: Bool
 }
 
 -- | Valor del estado inicial
 initialEnv :: GlEnv
-initialEnv = GlEnv True "" 0 [] []
+initialEnv = GlEnv False "" 0 [] []

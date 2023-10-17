@@ -213,13 +213,13 @@ type Env = [Val]
 
 type Stack = [Val]
 
-data Val = I Int | Fun Env Bytecode | RA Env Bytecode
+data Val = I Int | Fun Env Bytecode | RA Env Bytecode deriving Show
 
 eFix :: Bytecode -> Env -> Env
 eFix cf e = Fun (eFix cf e) cf : e
 
 evalBC :: (MonadFD4 m) => Bytecode -> Env -> Stack -> m Int
-evalBC (STOP : bc) e ((I r) : s) = return r
+evalBC (STOP : bc) _ _ = return 0
 evalBC (CONST : n : bc) e s = evalBC bc e (I n : s)
 evalBC (ADD : bc) e (I l : I r : s) = evalBC bc e (I (l + r) : s)
 evalBC (SUB : bc) e (I l : I r : s) = evalBC bc e (I (r - l) : s)
@@ -235,14 +235,14 @@ evalBC (PRINTN : bc) e st@((I p) : s) = do
   printFD4 $ show p
   evalBC bc e st
 evalBC (PRINT : bc) e s = do
-  printFD4 $ bc2string (takeWhile (/= NULL) bc)
+  printStr $ bc2string (takeWhile (/= NULL) bc)
   evalBC (tail (dropWhile (/= NULL) bc)) e s
 evalBC (FIX : bc) e ((Fun fe fb) : s) = evalBC bc e (Fun (eFix fb fe) fb : s)
 evalBC (IFZ : tl : bc) e ((I v) : s)
   | v == 0 = evalBC bc e s
   | otherwise = evalBC (drop tl bc) e s
 evalBC (JUMP : n : bc) e s = evalBC (drop n bc) e s
-evalBC _ _ _ = error "El programa es invalido, papu"
+evalBC bc e s = error "El programa es invalido, papu"
 
 runBC :: (MonadFD4 m) => Bytecode -> m ()
 runBC bc = do

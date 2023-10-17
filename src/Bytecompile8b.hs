@@ -267,10 +267,10 @@ evalBC (RETURN : _) _ (v : (RA re rbc) : s) = evalBC rbc re (v : s)
 evalBC (SHIFT : bc) e (v : s) = evalBC bc (v : e) s
 evalBC (DROP : bc) (v : e) s = evalBC bc e s
 evalBC (PRINTN : bc) e st@((I p) : s) = do
-  printFD4 $ show p
+  printStr $ show p
   evalBC bc e st
 evalBC (PRINT : bc) e s = do
-  printFD4 $ bc2string (takeWhile (/= NULL) bc)
+  printStr $ bc2string (takeWhile (/= NULL) bc)
   evalBC (tail (dropWhile (/= NULL) bc)) e s
 evalBC (FIX : bc) e ((Fun fe fb) : s) = evalBC bc e (Fun (eFix fb fe) fb : s)
 evalBC (IFZ : bc) e ((I v) : s)

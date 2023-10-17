@@ -93,7 +93,7 @@ value2term (CClos (CFix _ te ty)) = Fix (NoPos, ty) "f" ty "x" (getTy e) (Sc2 te
 
 -- TODO Mirar q onda esto
 cekValue2string :: (MonadFD4 m) => CEKValue -> m String
-cekValue2string (CCons c) = return $ show c
+cekValue2string (CCons (CNat i)) = return $ show i
 cekValue2string (CClos (CFun env t ty)) = do
   ppt <- pp t
   es <- env2string env

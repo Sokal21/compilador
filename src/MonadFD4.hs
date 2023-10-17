@@ -17,6 +17,7 @@
 -- y la mónada 'FD4' que provee una instancia de esta clase.
 module MonadFD4
   ( FD4,
+    printStr,
     runFD4,
     lookupDecl,
     lookupTy,
@@ -34,6 +35,7 @@ module MonadFD4
     failPosFD4,
     failFD4,
     addDecl,
+    getCek,
     catchErrors,
     MonadFD4,
     module Control.Monad.Except,
@@ -80,6 +82,9 @@ setInter b = modify (\s -> s {inter = b})
 getInter :: MonadFD4 m => m Bool
 getInter = gets inter
 
+printStr :: MonadFD4 m => String -> m ()
+printStr = liftIO . putStr
+
 printFD4 :: MonadFD4 m => String -> m ()
 printFD4 = liftIO . putStrLn
 
@@ -102,7 +107,8 @@ lookAndReplace t@(ea, eb) (x@(a, b) : xs)
   | otherwise = x : lookAndReplace t xs
 
 addDecl :: MonadFD4 m => Decl TTerm -> m ()
-addDecl d = modify (\s -> s {glb = d : glb s, cantDecl = cantDecl s + 1})
+addDecl d@(Decl {}) = modify (\s -> s {glb = d : glb s, cantDecl = cantDecl s + 1})
+addDecl d@(TyDecl {}) = return ()
 
 eraseLastFileDecls :: MonadFD4 m => m ()
 eraseLastFileDecls = do
@@ -166,3 +172,6 @@ runFD4' c conf = runExceptT $ runStateT (runReaderT c conf) initialEnv
 
 runFD4 :: FD4 a -> Conf -> IO (Either Error a)
 runFD4 c conf = fmap fst <$> runFD4' c conf
+
+getCek :: MonadFD4 m => m Bool
+getCek = asks cek
