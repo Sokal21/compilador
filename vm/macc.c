@@ -118,6 +118,22 @@ static int env_len(env e)
 	return rc;
 }
 
+static value env_lookup(int index, env e)
+{
+
+	for (int i = 0; i < index && e; i++)
+	{
+		e = e->next;
+	}
+
+	
+	if(e) {
+		return e->v;
+	} else {
+		quit("No pude encontrar la variable, papu");
+	}
+}
+
 void run(code init_c)
 {
 	/*
@@ -193,9 +209,29 @@ void run(code init_c)
 
 		/* Consumimos un opcode y lo inspeccionamos. */
 		switch(*c++) {
+		case JUMP: {
+			int jmp = *c++;
+			c += jmp;
+
+			break;
+		}
+
+		case CJUMP: {
+			int jmp = *c++;
+			value val = *--s;
+			
+			if(val.i != 0) {
+				c += jmp;
+			}
+
+			break;
+		}
+
 		case ACCESS: {
-			/* implementame */
-			abort();
+			value v = env_lookup(*c++, e);
+			*s++ = v;
+
+			break;
 		}
 
 		case CONST: {
@@ -268,8 +304,13 @@ void run(code init_c)
 		}
 
 		case TAILCALL: {
-			/* implementame */
-			abort();
+			value arg = *--s;
+			value fun = *--s;
+
+			e = env_push(fun.clo.clo_env, arg);
+			c = fun.clo.clo_body;
+			
+			break;
 		}
 
 		case FUNCTION: {
@@ -325,13 +366,15 @@ void run(code init_c)
 		}
 
 		case SHIFT: {
-			/* implementame */
-			abort();
+			value v = *--s;
+			e = env_push(e, v);
+
+			break;
 		}
 
 		case DROP: {
-			/* implementame */
-			abort();
+			e = e->next;
+			break;
 		}
 
 		case PRINTN: {
