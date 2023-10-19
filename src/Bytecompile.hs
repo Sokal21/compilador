@@ -94,6 +94,8 @@ pattern PRINTN = 14
 
 pattern JUMP = 15
 
+pattern TAILCALL = 16
+
 -- función util para debugging: muestra el Bytecode de forma más legible.
 showOps :: Bytecode -> [String]
 showOps [] = []
@@ -115,6 +117,7 @@ showOps (PRINT : xs) =
    in ("PRINT " ++ show (bc2string msg)) : showOps rest
 showOps (PRINTN : xs) = "PRINTN" : showOps xs
 showOps (ADD : xs) = "ADD" : showOps xs
+showOps (TAILCALL : xs) = "TAILCALL" : showOps xs
 showOps (x : xs) = show x : showOps xs
 
 showBC :: Bytecode -> String
@@ -123,6 +126,10 @@ showBC = intercalate "; " . showOps
 opToBcc :: BinaryOp -> Bytecode
 opToBcc Add = [ADD]
 opToBcc Sub = [SUB]
+
+decideTailCall [] = [RETURN]
+decideTailCall xs | last xs == CALL = [TAILCALL]
+                  | otherwise = [RETURN]
 
 bcc :: (MonadFD4 m) => TTerm -> m Bytecode
 bcc (V _ (Bound num)) = return [ACCESS, num]
@@ -141,10 +148,10 @@ bcc (App _ ft vt) = do
   return $ bcf ++ bcv ++ [CALL]
 bcc (Lam _ _ _ (Sc1 tt)) = do
   bctt <- bcc tt
-  return $ [FUNCTION] ++ [length bctt + 1] ++ bctt ++ [RETURN]
+  return $ [FUNCTION] ++ [length bctt + 1] ++ bctt ++ decideTailCall bctt
 bcc (Fix _ _ _ _ _ (Sc2 bt)) = do
   bcbt <- bcc bt
-  return $ [FUNCTION] ++ [length bcbt + 1] ++ bcbt ++ [RETURN, FIX]
+  return $ [FUNCTION] ++ [length bcbt + 1] ++ bcbt ++ decideTailCall bcbt ++ [FIX]
 bcc (Let _ _ _ tt (Sc1 dt)) = do
   bctt <- bcc tt
   bcdt <- bcc dt
@@ -242,6 +249,7 @@ evalBC (IFZ : tl : bc) e ((I v) : s)
   | v == 0 = evalBC bc e s
   | otherwise = evalBC (drop tl bc) e s
 evalBC (JUMP : n : bc) e s = evalBC (drop n bc) e s
+evalBC (TAILCALL : bc) e (v : Fun ef bcf : s) = evalBC bcf (v : e) s 
 evalBC bc e s = error "El programa es invalido, papu"
 
 runBC :: (MonadFD4 m) => Bytecode -> m ()
