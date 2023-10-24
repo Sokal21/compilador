@@ -1,0 +1,5 @@
+let x: Nat = 4
+let y: Nat = 8
+let f (z: Nat)(w: Nat): Nat = z + w
+let o: Nat = f x y
+let p: Nat = print "Result " o

@@ -131,20 +131,20 @@ opToBcc Sub = [SUB]
 
 bcTailcall :: (MonadFD4 m) => TTerm -> m Bytecode
 bcTailcall (App _ l r) = do
-  bcl <- bcc l
+  bcl <- bcDrop l
   bcr <- bcc r
   return $ bcl ++ bcr ++ [TAILCALL]
 bcTailcall (IfZ _ c t e) = do
-  bc <- bcc c
+  bc <- bcDrop c
   dt <- bcTailcall t
   de <- bcTailcall e
   return $ bc ++ [IFZ, length dt + 2] ++ dt ++ [JUMP, length de] ++ de
 bcTailcall (Let _ _ _ tt (Sc1 dt)) = do
-  bctt <- bcc tt
+  bctt <- bcDrop tt
   bcdt <- bcTailcall dt
   return $ bctt ++ [SHIFT] ++ bcdt
 bcTailcall xs = do
-  bxs <- bcc xs
+  bxs <- bcDrop xs
   return $ bxs ++ [RETURN]
 
 bcc :: (MonadFD4 m) => TTerm -> m Bytecode
@@ -152,14 +152,14 @@ bcc (V _ (Bound num)) = return [ACCESS, num]
 bcc (V _ _) = error "No podes entrar aca, papu"
 bcc (Const _ (CNat num)) = return [CONST, num]
 bcc (BinaryOp _ op lt rt) = do
-  bcl <- bcc lt
+  bcl <- bcDrop lt
   bcr <- bcc rt
   return $ bcl ++ bcr ++ opToBcc op
 bcc (Print _ str tt) = do
   bc <- bcc tt
   return $ bc ++ [PRINT] ++ string2bc str ++ [NULL] ++ [PRINTN]
 bcc (App _ ft vt) = do
-  bcf <- bcc ft
+  bcf <- bcDrop ft
   bcv <- bcc vt
   return $ bcf ++ bcv ++ [CALL]
 bcc (Lam _ _ _ (Sc1 tt)) = do
@@ -169,15 +169,21 @@ bcc (Fix _ _ _ _ _ (Sc2 bt)) = do
   bcbt <- bcTailcall bt
   return $ [FUNCTION] ++ [length bcbt] ++ bcbt ++ [FIX]
 bcc (Let _ _ _ tt (Sc1 dt)) = do
-  bctt <- bcc tt
+  bctt <- bcDrop tt
   bcdt <- bcc dt
-  return $ bctt ++ [SHIFT] ++ bcdt ++ [DROP]
+  return $ bctt ++ [SHIFT] ++ bcdt
 bcc (IfZ _ ct tt et) = do
-  bcct <- bcc ct
+  bcct <- bcDrop ct
   bctt <- bcc tt
   bcet <- bcc et
   return $ bcct ++ [IFZ, length bctt + 2] ++ bctt ++ [JUMP, length bcet] ++ bcet
 
+bcDrop :: MonadFD4 m => TTerm -> m Bytecode 
+bcDrop (Let _ _ _ tt (Sc1 dt)) = do
+  bctt <- bcDrop tt
+  bcdt <- bcc dt
+  return $ bctt ++ [SHIFT] ++ bcdt ++ [DROP]
+bcDrop bc = bcc bc  
 -- ord/chr devuelven los codepoints unicode, o en otras palabras
 -- la codificación UTF-32 del caracter.
 string2bc :: String -> Bytecode
