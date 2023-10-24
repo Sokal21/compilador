@@ -24,6 +24,7 @@ import Data.List (intercalate)
 import Lang
 import MonadFD4
 import Subst
+import Debug.Trace
 
 fileExtesion :: String
 fileExtesion = ".bc32"
@@ -108,6 +109,7 @@ showOps (CALL : xs) = "CALL" : showOps xs
 showOps (ADD : xs) = "ADD" : showOps xs
 showOps (SUB : xs) = "SUB" : showOps xs
 showOps (FIX : xs) = "FIX" : showOps xs
+showOps (IFZ : i :  xs) = ("IFZ off =" ++ show i) : showOps xs
 showOps (STOP : xs) = "STOP" : showOps xs
 showOps (JUMP : i : xs) = ("JUMP off=" ++ show i) : showOps xs
 showOps (SHIFT : xs) = "SHIFT" : showOps xs
@@ -127,9 +129,23 @@ opToBcc :: BinaryOp -> Bytecode
 opToBcc Add = [ADD]
 opToBcc Sub = [SUB]
 
-decideTailCall [] = [RETURN]
-decideTailCall xs | last xs == CALL = [TAILCALL]
-                  | otherwise = [RETURN]
+bcTailcall :: (MonadFD4 m) => TTerm -> m Bytecode
+bcTailcall (App _ l r) = do
+  bcl <- bcc l
+  bcr <- bcc r
+  return $ bcl ++ bcr ++ [TAILCALL]
+bcTailcall (IfZ _ c t e) = do
+  bc <- bcc c
+  dt <- bcTailcall t
+  de <- bcTailcall e
+  return $ bc ++ [IFZ, length dt + 2] ++ dt ++ [JUMP, length de] ++ de
+bcTailcall (Let _ _ _ tt (Sc1 dt)) = do
+  bctt <- bcc tt
+  bcdt <- bcTailcall dt
+  return $ bctt ++ [SHIFT] ++ bcdt
+bcTailcall xs = do
+  bxs <- bcc xs
+  return $ bxs ++ [RETURN]
 
 bcc :: (MonadFD4 m) => TTerm -> m Bytecode
 bcc (V _ (Bound num)) = return [ACCESS, num]
@@ -147,11 +163,11 @@ bcc (App _ ft vt) = do
   bcv <- bcc vt
   return $ bcf ++ bcv ++ [CALL]
 bcc (Lam _ _ _ (Sc1 tt)) = do
-  bctt <- bcc tt
-  return $ [FUNCTION] ++ [length bctt + 1] ++ bctt ++ decideTailCall bctt
+  bctt <- bcTailcall tt
+  return $ [FUNCTION] ++ [length bctt] ++ bctt
 bcc (Fix _ _ _ _ _ (Sc2 bt)) = do
-  bcbt <- bcc bt
-  return $ [FUNCTION] ++ [length bcbt + 1] ++ bcbt ++ decideTailCall bcbt ++ [FIX]
+  bcbt <- bcTailcall bt
+  return $ [FUNCTION] ++ [length bcbt] ++ bcbt ++ [FIX]
 bcc (Let _ _ _ tt (Sc1 dt)) = do
   bctt <- bcc tt
   bcdt <- bcc dt
@@ -231,7 +247,8 @@ evalBC (CONST : n : bc) e s = evalBC bc e (I n : s)
 evalBC (ADD : bc) e (I l : I r : s) = evalBC bc e (I (l + r) : s)
 evalBC (SUB : bc) e (I l : I r : s) = evalBC bc e (I (r - l) : s)
 evalBC (ACCESS : i : bc) e s = case lookUpIndex i e of
-  Nothing -> error "No pudimos indexar la variable, papu"
+  Nothing -> do
+    error "No pudimos indexar la variable, papu"
   Just n -> evalBC bc e (n : s)
 evalBC (CALL : bc) e (v : Fun ef bcf : s) = evalBC bcf (v : ef) (RA e bc : s)
 evalBC (FUNCTION : bl : bc) e s = evalBC (drop bl bc) e (Fun e (take bl bc) : s)
@@ -249,8 +266,10 @@ evalBC (IFZ : tl : bc) e ((I v) : s)
   | v == 0 = evalBC bc e s
   | otherwise = evalBC (drop tl bc) e s
 evalBC (JUMP : n : bc) e s = evalBC (drop n bc) e s
-evalBC (TAILCALL : bc) e (v : Fun ef bcf : s) = evalBC bcf (v : e) s 
-evalBC bc e s = error "El programa es invalido, papu"
+evalBC (TAILCALL : bc) e (v : Fun ef bcf : s) = evalBC bcf (v : ef) s
+evalBC bc e s = do
+  trace (join (showOps bc)) $ return ()
+  error "El programa es invalido, papu"
 
 runBC :: (MonadFD4 m) => Bytecode -> m ()
 runBC bc = do

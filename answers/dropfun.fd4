@@ -1,0 +1,2 @@
+let x:Nat = print "X = "
+    ((let (f:Nat->Nat) = fun (x:Nat) -> x+1 in f 2) + (let (f:Nat->Nat) = fun (x:Nat) -> x+1 in f 1))

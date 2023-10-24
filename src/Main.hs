@@ -12,7 +12,7 @@ module Main where
 -- import Control.Monad
 
 -- import Bytecompile (bcRead, bcWrite, bytecompileModule, runBC, fileExtesion)
-import Bytecompile (bcRead, bcWrite, bytecompileModule, fileExtesion, runBC)
+import Bytecompile (bcRead, bcWrite, bytecompileModule, fileExtesion, runBC, showBC)
 import CEK (seek, value2term)
 import Control.Exception (IOException, catch)
 import Control.Monad.Catch (MonadMask)
@@ -88,6 +88,7 @@ main = execParser opts >>= go
 runBVM :: (MonadFD4 m) => FilePath -> m ()
 runBVM f = do
   bc <- liftIO $ bcRead f
+  printFD4 $ showBC bc
   runBC bc
 
 runOrFail :: Conf -> FD4 a -> IO a

@@ -1,0 +1,2 @@
+let rec f (x:Nat) : Nat = ifz x then x else f (x - 1)
+let a: Nat = print "hola" (f 10)
