@@ -14,6 +14,13 @@ import Lang
 type TyEnv = [(Name,Ty)]
 type Env = [(Name,Ty)]
 
+data Profile = Prof {
+  steps :: Int,
+  operations :: Int,
+  maxStackSize :: Int,
+  closures :: Int
+} deriving Show 
+
 data GlEnv = GlEnv {
   inter :: Bool,        --  ^ True, si estamos en modo interactivo.
                         -- Este parámetro puede cambiar durante la ejecución:
@@ -21,7 +28,8 @@ data GlEnv = GlEnv {
   lfile :: String,      -- ^ Último archivo cargado.
   cantDecl :: Int,      -- ^ Cantidad de declaraciones desde la última carga
   glb :: [Decl TTerm],  -- ^ Entorno con declaraciones globales
-  types :: TyEnv -- ^ Entorno con declaraciones de tipos
+  types :: TyEnv, -- ^ Entorno con declaraciones de tipos
+  profile :: Profile
 } deriving Show
 
 -- ^ Entorno de tipado de declaraciones globales
@@ -44,9 +52,14 @@ data Mode =
 data Conf = Conf {
     opt :: Bool,          --  ^ True, si estan habilitadas las optimizaciones.
     modo :: Mode,
-    cek :: Bool
+    cek :: Bool,
+    profiling :: Bool
 }
+
+
+initialProfile :: Profile
+initialProfile = Prof 0 0 0 0
 
 -- | Valor del estado inicial
 initialEnv :: GlEnv
-initialEnv = GlEnv False "" 0 [] []
+initialEnv = GlEnv False "" 0 [] [] initialProfile

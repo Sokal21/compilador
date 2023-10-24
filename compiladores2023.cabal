@@ -41,6 +41,7 @@ executable compiladores2023
         CEK
         Bytecompile
         Bytecompile8b
+        Optimize
 
     ghc-options: 
         -threaded 

@@ -1,0 +1,2 @@
+let result: Nat = let x: Nat = 4 + 21 - 23 - 1 + 232 in x + 1
+let y: Nat = ifz 0 then (print "then " result) else (print "else " (result + 1))

@@ -17,6 +17,12 @@
 -- y la mónada 'FD4' que provee una instancia de esta clase.
 module MonadFD4
   ( FD4,
+    printProfile,
+    getProfiling,
+    addStep,
+    addOpp,
+    addMaxStack,
+    addClos,
     printStr,
     runFD4,
     lookupDecl,
@@ -51,6 +57,7 @@ import Errors (Error (..))
 import Global
 import Lang
 import System.IO
+import qualified Control.Monad
 
 -- * La clase 'MonadFD4'
 
@@ -75,6 +82,52 @@ getOpt = asks opt
 
 getMode :: MonadFD4 m => m Mode
 getMode = asks modo
+
+printProfile :: MonadFD4 m => m ()
+printProfile = do
+  p <- getProfiling
+  Control.Monad.when p $ do
+      (Prof s o m c) <- getProf
+      printFD4 "--------------------------"
+      printFD4 $ "Numero de pasos: " ++ show s
+      printFD4 $ "Numero de operaciones: " ++ show o
+      printFD4 $ "Tamaño maximo de stack: " ++ show m
+      printFD4 $ "Numero de clausuras: " ++ show c
+      printFD4 "--------------------------"
+      return ()
+
+getProfiling :: MonadFD4 m => m Bool
+getProfiling = asks profiling
+
+getProf :: MonadFD4 m => m Profile
+getProf = gets profile
+
+addStep :: MonadFD4 m => m ()
+addStep = do
+  p@(Prof s _ _ _) <- getProf
+  _ <- setProf $ p {steps = s+1}
+  return ()
+
+addOpp :: MonadFD4 m => m ()
+addOpp = do
+  p@(Prof _ o _ _) <- getProf
+  _ <- setProf $ p {operations = o+1}
+  return ()
+
+addMaxStack :: MonadFD4 m => Int -> m ()
+addMaxStack size = do
+  p@(Prof _ _ s _) <- getProf
+  _ <- setProf $ p {maxStackSize = max s size}
+  return ()
+
+addClos :: MonadFD4 m => m ()
+addClos = do
+  p@(Prof _ _ _ c) <- getProf
+  _ <- setProf $ p {closures = c+1}
+  return ()
+
+setProf :: MonadFD4 m => Profile -> m ()
+setProf p = modify (\s -> s {profile = p})
 
 setInter :: MonadFD4 m => Bool -> m ()
 setInter b = modify (\s -> s {inter = b})
