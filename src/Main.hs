@@ -26,6 +26,7 @@ import Eval (eval)
 import Global
 import Lang
 import MonadFD4
+import Optimize (optimize, optimizeDecl)
 import Options.Applicative
 import PPrint (freshSTy, pp, ppDecl, ppTy)
 import Parse (P, declOrTm, program, runP, tm)
@@ -34,8 +35,6 @@ import System.Exit (ExitCode (ExitFailure), exitWith)
 import System.FilePath (dropExtension)
 import System.IO (hPrint, hPutStrLn, stderr)
 import TypeChecker (tc, tcDecl)
-import Optimize (optimize, optimizeDecl)
-import Debug.Trace (trace)
 
 prompt :: String
 prompt = "FD4> "
@@ -80,24 +79,30 @@ main = execParser opts >>= go
 
     go :: (Mode, Bool, Bool, Bool, [FilePath]) -> IO ()
     go (Bytecompile, opt, cek, prof, files) =
-      runOrFail (Conf opt Bytecompile cek prof) $ mapM_ compileBytecode files
+      let m = if prof then Right (mapM_ compileBytecode files) else Left (mapM_ compileBytecode files)
+       in runOrFail (Conf opt Bytecompile cek prof) m
     go (RunVM, opt, cek, prof, files) =
-      runOrFail (Conf opt RunVM cek prof) $ mapM_ runBVM files
+      let m = if prof then Right (mapM_ runBVM files) else Left (mapM_ runBVM files)
+       in runOrFail (Conf opt RunVM cek prof) m
     go (Interactive, opt, cek, prof, files) =
-      runOrFail (Conf opt Interactive cek prof) (runInputT defaultSettings (repl files))
+      let m = if prof then Right (runInputT defaultSettings (repl files)) else Left (runInputT defaultSettings (repl files))
+       in runOrFail (Conf opt Interactive cek prof) m
     go (m, opt, cek, prof, files) =
-      runOrFail (Conf opt m cek prof) $ mapM_ compileFile files
+      let m' = if prof then Right (mapM_ compileFile files) else Left (mapM_ compileFile files)
+       in runOrFail (Conf opt m cek prof) m'
 
 runBVM :: (MonadFD4 m) => FilePath -> m ()
 runBVM f = do
   bc <- liftIO $ bcRead f
-  p <- getProfiling
-  runBC p bc
+  runBC bc
   printProfile
 
-runOrFail :: Conf -> FD4 a -> IO a
+runOrFail :: Conf -> Either (FD4 a) (FD4Profiled a) -> IO a
 runOrFail c m = do
-  r <- runFD4 m c
+  r <- case m of
+    Left a -> runFD4 a c
+    Right a -> runFD4Profiling a c
+
   case r of
     Left err -> do
       liftIO $ hPrint stderr err
@@ -329,8 +334,7 @@ compilePhrase x = do
 
 evalCEK :: (MonadFD4 m) => TTerm -> m TTerm
 evalCEK t = do
-  p <- getProfiling
-  te <- seek p t [] []
+  te <- seek t [] []
   return $ value2term te
 
 handleTerm :: (MonadFD4 m) => STerm -> m ()

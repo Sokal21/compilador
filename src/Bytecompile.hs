@@ -15,7 +15,6 @@
 module Bytecompile (Bytecode, runBC, bcWrite, bcRead, bytecompileModule, showBC, fileExtesion) where
 
 import Common (lookUpIndex)
-import qualified Control.Monad
 import Data.Binary (Binary (get, put), Word32, decode, encode)
 import Data.Binary.Get (getWord32le, isEmpty)
 import Data.Binary.Put (putWord32le)
@@ -248,58 +247,47 @@ data Val = I Int | Fun Env Bytecode | RA Env Bytecode deriving (Show)
 eFix :: Bytecode -> Env -> Env
 eFix cf e = Fun (eFix cf e) cf : e
 
-profileOperation :: (MonadFD4 m) => Bool -> m ()
-profileOperation p =
-  Control.Monad.when p $ do
-    addOpp
-
-profileStack :: (MonadFD4 m) => Bool -> Stack -> m Stack
-profileStack p s = do
-  Control.Monad.when p $ do
-    addMaxStack $ length s
+profileStack :: (MonadFD4 m) => Stack -> m Stack
+profileStack s = do
+  addMaxStack $ length s
   return s
 
-profileClousure :: (MonadFD4 m) => Bool -> m ()
-profileClousure p =
-  Control.Monad.when p $ do
-    addClos
-
-evalBC :: (MonadFD4 m) => Bool -> Bytecode -> Env -> Stack -> m Int
-evalBC p (STOP : bc) _ _ = return 0
-evalBC p (CONST : n : bc) e s = profileOperation p >> profileStack p (I n : s) >>= evalBC p bc e
-evalBC p (ADD : bc) e (I l : I r : s) = 
-  profileOperation p >> profileStack p (I (l + r) : s) >>= evalBC p bc e
-evalBC p (SUB : bc) e (I l : I r : s) = profileOperation p >> profileStack p (I (r - l) : s) >>= evalBC p bc e
-evalBC p (ACCESS : i : bc) e s = case lookUpIndex i e of
+evalBC :: (MonadFD4 m) => Bytecode -> Env -> Stack -> m Int
+evalBC (STOP : bc) _ _ = return 0
+evalBC (CONST : n : bc) e s = addOpp >> profileStack (I n : s) >>= evalBC bc e
+evalBC (ADD : bc) e (I l : I r : s) = 
+  addOpp >> profileStack (I (l + r) : s) >>= evalBC bc e
+evalBC (SUB : bc) e (I l : I r : s) = addOpp >> profileStack (I (r - l) : s) >>= evalBC bc e
+evalBC (ACCESS : i : bc) e s = case lookUpIndex i e of
   Nothing -> do
     error "No pudimos indexar la variable, papu"
-  Just n -> profileOperation p >> profileStack p (n : s) >>= evalBC p bc e
-evalBC p (CALL : bc) e (v : Fun ef bcf : s) = 
-  profileOperation p >> profileClousure p >> profileStack p (RA e bc : s) >>= evalBC p bcf (v : ef)
-evalBC p (FUNCTION : bl : bc) e s = 
-  profileOperation p >> profileClousure p >> profileStack p (Fun e (take bl bc) : s) >>= evalBC p (drop bl bc) e
-evalBC p (RETURN : _) _ (v : (RA re rbc) : s) = 
-  profileOperation p >> profileStack p (v : s) >>= evalBC p rbc re
-evalBC p (SHIFT : bc) e (v : s) = profileOperation p >> evalBC p bc (v : e) s
-evalBC p (DROP : bc) (v : e) s = profileOperation p >> evalBC p bc e s
-evalBC p (PRINTN : bc) e st@((I k) : s) = do
-  profileOperation p
+  Just n -> addOpp >> profileStack (n : s) >>= evalBC bc e
+evalBC (CALL : bc) e (v : Fun ef bcf : s) = 
+  addOpp >> addClos >> profileStack (RA e bc : s) >>= evalBC bcf (v : ef)
+evalBC (FUNCTION : bl : bc) e s = 
+  addOpp >> addClos >> profileStack (Fun e (take bl bc) : s) >>= evalBC (drop bl bc) e
+evalBC (RETURN : _) _ (v : (RA re rbc) : s) = 
+  addOpp >> profileStack (v : s) >>= evalBC rbc re
+evalBC (SHIFT : bc) e (v : s) = addOpp >> evalBC bc (v : e) s
+evalBC (DROP : bc) (v : e) s = addOpp >> evalBC bc e s
+evalBC (PRINTN : bc) e st@((I k) : s) = do
+  addOpp
   printFD4 $ show k
-  evalBC p bc e st
-evalBC p (PRINT : bc) e s = do
-  profileOperation p
+  evalBC bc e st
+evalBC (PRINT : bc) e s = do
+  addOpp
   printStr $ bc2string (takeWhile (/= NULL) bc)
-  evalBC p (tail (dropWhile (/= NULL) bc)) e s
-evalBC p (FIX : bc) e ((Fun fe fb) : s) = 
-  profileOperation p >> profileClousure p >> profileStack p (Fun (eFix fb fe) fb : s) >>= evalBC p bc e
-evalBC p (IFZ : tl : bc) e ((I v) : s)
-  | v == 0 = profileOperation p >> evalBC p bc e s
-  | otherwise = profileOperation p >> evalBC p (drop tl bc) e s
-evalBC p (JUMP : n : bc) e s = profileOperation p >> evalBC p (drop n bc) e s
-evalBC p (TAILCALL : bc) e (v : Fun ef bcf : s) = profileOperation p >> evalBC p bcf (v : ef) s
-evalBC p bc e s = error "El programa es invalido, papu"
+  evalBC (tail (dropWhile (/= NULL) bc)) e s
+evalBC (FIX : bc) e ((Fun fe fb) : s) = 
+  addOpp >> addClos >> profileStack (Fun (eFix fb fe) fb : s) >>= evalBC bc e
+evalBC (IFZ : tl : bc) e ((I v) : s)
+  | v == 0 = addOpp >> evalBC bc e s
+  | otherwise = addOpp >> evalBC (drop tl bc) e s
+evalBC (JUMP : n : bc) e s = addOpp >> evalBC (drop n bc) e s
+evalBC (TAILCALL : bc) e (v : Fun ef bcf : s) = addOpp >> evalBC bcf (v : ef) s
+evalBC bc e s = error "El programa es invalido, papu"
 
-runBC :: (MonadFD4 m) => Bool -> Bytecode -> m ()
-runBC p bc = do
-  t <- evalBC p bc [] []
+runBC :: (MonadFD4 m) => Bytecode -> m ()
+runBC bc = do
+  t <- evalBC bc [] []
   return ()

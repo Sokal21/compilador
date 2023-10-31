@@ -48,9 +48,9 @@ consfold (IfZ _ (Const _ (CNat a)) t e) | a == 0 = (True, snd (consfold t))
                                         | otherwise = (True,  snd (consfold e))
 consfold t = recOptimizer consfold t
 
-consprod :: TTerm -> (Bool, TTerm)
-consprod (Let _ _ _ c@(Const _ _) s) = (True, snd (consprod (subst c s)))
-consprod t = recOptimizer consprod t
+consprop :: TTerm -> (Bool, TTerm)
+consprop (Let _ _ _ c@(Const _ _) s) = (True, snd (consprop (subst c s)))
+consprop t = recOptimizer consprop t
 
 optimizeRec :: Optimizers -> Bool -> TTerm -> TTerm
 optimizeRec ops c t | c = let
@@ -59,7 +59,7 @@ optimizeRec ops c t | c = let
                     | otherwise = t
 
 optimize :: TTerm -> TTerm
-optimize = optimizeRec [consprod, consfold] True
+optimize = optimizeRec [consprop, consfold] True
 
 optimizeDecl :: Decl TTerm -> Decl TTerm
 optimizeDecl (Decl p x tt) = Decl p x $ optimize tt

@@ -6,7 +6,6 @@ import Lang
 import MonadFD4 (MonadFD4, lookupDecl, printFD4, addStep)
 import PPrint
 import Subst (open, open2)
-import qualified Control.Monad
 
 type CEKEnv = [CEKValue]
 
@@ -26,56 +25,51 @@ data Frame
 
 type Kont = [Frame]
 
-makeStep:: (MonadFD4 m) => Bool -> m ()
-makeStep p =
-  Control.Monad.when p $ do
-    addStep
-
-seek :: (MonadFD4 m) => Bool -> TTerm -> CEKEnv -> Kont -> m CEKValue
-seek p (Print _ s t) env kont = makeStep p >> seek p t env (KPrint s : kont)
-seek p (BinaryOp _ bop lt rt) env kont =  makeStep p >> seek p lt env (KBinaryOpFst env bop rt : kont)
-seek p (IfZ _ c t e) env kont = makeStep p >> seek p c env (KIfZ env t e : kont)
-seek p (App _ ft vt) env kont = makeStep p >> seek p ft env (KArg env vt : kont)
-seek p (V _ var) env kont = makeStep p >> case var of
+seek :: (MonadFD4 m) => TTerm -> CEKEnv -> Kont -> m CEKValue
+seek (Print _ s t) env kont = addStep >> seek t env (KPrint s : kont)
+seek (BinaryOp _ bop lt rt) env kont =  addStep >> seek lt env (KBinaryOpFst env bop rt : kont)
+seek (IfZ _ c t e) env kont = addStep >> seek c env (KIfZ env t e : kont)
+seek (App _ ft vt) env kont = addStep >> seek ft env (KArg env vt : kont)
+seek (V _ var) env kont = addStep >> case var of
   Bound i -> case lookUpIndex i env of
     Nothing -> error "No pudimos encontrar la variable ligada en el entorno"
-    Just a -> destroy p a kont
+    Just a -> destroy a kont
   Free name -> do
     t <- lookupDecl name
     case t of
       Nothing -> error "No pudimos encontrar el termino asociado a la variable libre"
       Just tt -> do
-        st <- seek p tt [] []
-        destroy p st kont
+        st <- seek tt [] []
+        destroy st kont
   Global name -> do
     t <- lookupDecl name
     case t of
       Nothing -> error "No pudimos encontrar el termino asociado a la variable global"
       Just tt -> do
-        st <- seek p tt [] []
-        destroy p st kont
-seek p (Const _ c) _ kont = makeStep p >> destroy p (CCons c) kont
-seek p t@(Lam _ _ _ (Sc1 s)) env kont = makeStep p >> destroy p (CClos (CFun env s (getTy t))) kont
-seek p t@(Fix _ _ _ n2 _ (Sc2 s)) env kont = makeStep p >> destroy p (CClos (CFix env s (getTy t))) kont
-seek p (Let _ _ _ t (Sc1 s)) env kont = makeStep p >> seek p t env (KLet env s : kont)
+        st <- seek tt [] []
+        destroy st kont
+seek (Const _ c) _ kont = addStep >> destroy (CCons c) kont
+seek t@(Lam _ _ _ (Sc1 s)) env kont = addStep >> destroy (CClos (CFun env s (getTy t))) kont
+seek t@(Fix _ _ _ n2 _ (Sc2 s)) env kont = addStep >> destroy (CClos (CFix env s (getTy t))) kont
+seek (Let _ _ _ t (Sc1 s)) env kont = addStep >> seek t env (KLet env s : kont)
 
-destroy :: (MonadFD4 m) => Bool -> CEKValue -> Kont -> m CEKValue
-destroy p v ((KPrint s) : xs) = makeStep p >> do
+destroy :: (MonadFD4 m) => CEKValue -> Kont -> m CEKValue
+destroy v ((KPrint s) : xs) = addStep >> do
   pv <- cekValue2string v
   printFD4 $ s ++ pv
-  destroy p v xs
-destroy p v ((KBinaryOpFst env op t) : xs) = makeStep p >> seek p t env (KBinaryOpSnd v op : xs)
-destroy p v' ((KBinaryOpSnd v op) : xs) = makeStep p >> do
+  destroy v xs
+destroy v ((KBinaryOpFst env op t) : xs) = addStep >> seek t env (KBinaryOpSnd v op : xs)
+destroy v' ((KBinaryOpSnd v op) : xs) = addStep >> do
   vr <- cekOperation v op v'
-  destroy p vr xs
-destroy p (CCons (CNat 0)) ((KIfZ env lt rt) : xs) = makeStep p >> seek p lt env xs
-destroy p _ ((KIfZ env lt rt) : xs) = makeStep p >> seek p rt env xs
-destroy p (CClos c) ((KArg env t) : xs) = makeStep p >> seek p t env (KClos c : xs)
-destroy p v ((KArg env t) : xs) = error "Aplicacion de un valor"
-destroy p v ((KClos (CFun env t _)) : xs) = makeStep p >> seek p t (v : env) xs
-destroy p v ((KClos f@(CFix env t _)) : xs) = makeStep p >> seek p t (v : (CClos f : env)) xs
-destroy p v ((KLet env t) : xs) = makeStep p >> seek p t (v : env) xs
-destroy p v [] = return v
+  destroy vr xs
+destroy (CCons (CNat 0)) ((KIfZ env lt rt) : xs) = addStep >> seek lt env xs
+destroy _ ((KIfZ env lt rt) : xs) = addStep >> seek rt env xs
+destroy (CClos c) ((KArg env t) : xs) = addStep >> seek t env (KClos c : xs)
+destroy v ((KArg env t) : xs) = error "Aplicacion de un valor"
+destroy v ((KClos (CFun env t _)) : xs) = addStep >> seek t (v : env) xs
+destroy v ((KClos f@(CFix env t _)) : xs) = addStep >> seek t (v : (CClos f : env)) xs
+destroy v ((KLet env t) : xs) = addStep >> seek t (v : env) xs
+destroy v [] = return v
 
 cekOperation :: (MonadFD4 m) => CEKValue -> BinaryOp -> CEKValue -> m CEKValue
 cekOperation (CCons (CNat l)) Add (CCons (CNat r)) = return $ CCons (CNat (l + r))
