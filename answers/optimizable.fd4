@@ -1,2 +1,7 @@
-let result: Nat = let x: Nat = 4 + 21 - 23 - 1 + 232 in x + 1
-let y: Nat = ifz 0 then (print "then " result) else (print "else " (result + 1))
+# let choripete (z: Nat): Nat = let (k:Nat) = 1 in let (g : Nat->Nat) = fun (c:Nat) -> c + 1 in (let _: Nat = 1+2+3 in (let k: Nat = 4 - 3 + 20 in z + 3) )
+let choripete (z: Nat): Nat = let (k:Nat) = 1 in 1
+let k: Nat = let b: Nat = 4 in let c: Nat = 4 in 4
+
+
+
+let a: Nat = let b: Nat = (print "hola" 4) in b + 3
