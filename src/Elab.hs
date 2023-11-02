@@ -70,9 +70,9 @@ elab' env (SLet p (v, vty) def body) = do
   b <- elab' (v : env) body
   return $ Let p v (elabTy vty) d (close v b)
 elab' env (SLetLam p (f, fty) args d b No) =
-  elab' env $ SLet p (f, fty) (SLam p args d) b
+  elab' env $ SLet p (f, types args fty) (SLam p args d) b
 elab' env (SLetLam p (f, fty) args d b Yes) =
-  elab' env $ SLet p (f, fty) (SFix p (f, fty) args d) b
+  elab' env $ SLet p (f, types args fty) (SFix p (f, fty) args d) b
 
 types :: [(Name, STy)] -> STy -> STy
 types args v = foldr f v args

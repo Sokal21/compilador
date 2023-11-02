@@ -1,7 +1,11 @@
 # let choripete (z: Nat): Nat = let (k:Nat) = 1 in let (g : Nat->Nat) = fun (c:Nat) -> c + 1 in (let _: Nat = 1+2+3 in (let k: Nat = 4 - 3 + 20 in z + 3) )
-let choripete (z: Nat): Nat = let (k:Nat) = 1 in 1
-let k: Nat = let b: Nat = 4 in let c: Nat = 4 in 4
+# let choripete (z: Nat): Nat = let (k:Nat) = 1 in 1
+# let k: Nat = let b: Nat = 4 in let c: Nat = 4 in 4
 
 
 
-let a: Nat = let b: Nat = (print "hola" 4) in b + 3
+# let a: Nat = let b: Nat = (print "hola" 4) in b + 3
+
+let f: Nat -> Nat = fun (x: Nat)(y: Nat) -> 3
+let j: Nat = print "chorizo " f 3
+let a:Nat = let f (x:Nat):Nat = x+1 in 1
