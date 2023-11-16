@@ -3,7 +3,6 @@ module Optimize where
 import Common (Pos (NoPos))
 import Lang (BinaryOp (..), Const (..), Decl (..), Scope (Sc1), Scope2 (Sc2), TTerm, Tm (..), Ty (NatTy), Var (..))
 import Subst (subst, open, open2, close2, close)
-import Debug.Trace (trace)
 
 type Optimizer = TTerm -> (Bool, TTerm)
 
@@ -57,7 +56,7 @@ consprop t = recOptimizer consprop t
 
 deadcodeelim :: TTerm -> (Bool, TTerm)
 deadcodeelim tt@(Let _ name _ _ (Sc1 b)) = if 
-    go 0 (trace (show b) b) then
+    go 0 b then
     recOptimizer deadcodeelim tt else
     (True, snd $ deadcodeelim (open name (Sc1 b)))
   where

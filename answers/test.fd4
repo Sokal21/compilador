@@ -1,0 +1,6 @@
+# let mul = fix (mul0 : Nat -> Nat -> Nat) (m : Nat) ->
+#   fun (n : Nat) -> ifz n then 1 else m + (mul0 m (n - 1))
+
+let rec mul (m:Nat) (n:Nat) : Nat = ifz n then 0 else m + mul m (n - 1)
+
+let x: Nat = print "Papu, anda " (mul 3 11)

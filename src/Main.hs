@@ -35,6 +35,9 @@ import System.Exit (ExitCode (ExitFailure), exitWith)
 import System.FilePath (dropExtension)
 import System.IO (hPrint, hPutStrLn, stderr)
 import TypeChecker (tc, tcDecl)
+import ClosureConvert (closureConvertDecl)
+import IR (IrDecls(IrDecls))
+import C (ccWrite)
 
 prompt :: String
 prompt = "FD4> "
@@ -50,7 +53,7 @@ parseMode =
             <|> flag Bytecompile Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
             <|> flag RunVM RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
             <|> flag Eval Eval (long "eval" <> short 'e' <> help "Evaluar programa")
-            -- <|> flag' CC ( long "cc" <> short 'c' <> help "Compilar a código C")
+            <|> flag CC CC ( long "cc" <> short 'c' <> help "Compilar a código C")
             -- <|> flag' Canon ( long "canon" <> short 'n' <> help "Imprimir canonicalización")
             -- <|> flag' Assembler ( long "assembler" <> short 'a' <> help "Imprimir Assembler resultante")
             -- <|> flag' Build ( long "build" <> short 'b' <> help "Compilar")
@@ -78,6 +81,9 @@ main = execParser opts >>= go
         )
 
     go :: (Mode, Bool, Bool, Bool, [FilePath]) -> IO ()
+    go (CC, opt, cek, prof, files) =
+      let m = if prof then Right (mapM_ compileCC files) else Left (mapM_ compileCC files)
+       in runOrFail (Conf opt Bytecompile cek prof) m
     go (Bytecompile, opt, cek, prof, files) =
       let m = if prof then Right (mapM_ compileBytecode files) else Left (mapM_ compileBytecode files)
        in runOrFail (Conf opt Bytecompile cek prof) m
@@ -151,6 +157,26 @@ typecheckDecl :: (MonadFD4 m) => SDecl STerm -> m (Decl TTerm)
 typecheckDecl t = do
   e <- elabDecl t
   tcDecl e
+
+compileCC :: (MonadFD4 m) => FilePath -> m ()
+compileCC f = do
+  setInter False
+  printFD4 ("Abriendo " ++ f ++ "...")
+  decls <- loadFile f
+  tcdecl <- mapM tcAndAdd decls
+  let bc = closureConvertDecl tcdecl
+  liftIO $ ccWrite (IrDecls bc) (dropExtension f ++ ".c")
+  where
+    tcAndAdd d = do
+      tcd <- typecheckDecl d
+      case tcd of
+        (Decl p x tt) -> do
+          opt <- getOpt
+          let t = if opt then optimize tt else tt
+          addDecl (Decl p x t)
+        (TyDecl p x tt) -> do
+          addTy x tt
+      return tcd
 
 compileBytecode :: (MonadFD4 m) => FilePath -> m ()
 compileBytecode f = do
