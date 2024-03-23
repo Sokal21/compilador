@@ -19,7 +19,7 @@ module PPrint
 where
 
 import Common (Pos)
-import Data.Text (unpack)
+import Data.Text (unpack, intercalate)
 import Global (GlEnv (glb))
 import Lang
 import MonadFD4 (MonadFD4, gets)
@@ -67,12 +67,12 @@ openAll gp ns (V p v) = case v of
 openAll gp ns (Const p c) = SConst (gp p) c
 openAll gp ns (Lam p x ty t) =
   let x' = freshen ns x
-   in SLam (gp p) [(x', freshSTy ty)] (openAll gp (x' : ns) (open x' t))
+   in SLam (gp p) [([x'], freshSTy ty)] (openAll gp (x' : ns) (open x' t))
 openAll gp ns (App p t u) = SApp (gp p) (openAll gp ns t) (openAll gp ns u)
 openAll gp ns (Fix p f fty x xty t) =
   let x' = freshen ns x
       f' = freshen (x' : ns) f
-   in SFix (gp p) (f', freshSTy fty) [(x', freshSTy xty)] (openAll gp (x : f : ns) (open2 f' x' t))
+   in SFix (gp p) (f', freshSTy fty) [([x'], freshSTy xty)] (openAll gp (x : f : ns) (open2 f' x' t))
 openAll gp ns (IfZ p c t e) = SIfZ (gp p) (openAll gp ns c) (openAll gp ns t) (openAll gp ns e)
 openAll gp ns (Print p str t) = SPrint (gp p) str (openAll gp ns t)
 openAll gp ns (BinaryOp p op t u) = SBinaryOp (gp p) op (openAll gp ns t) (openAll gp ns u)
@@ -160,7 +160,7 @@ t2doc at (SLetLam i (f, ty) args def body r) =
                   )
               ),
             name2doc f,
-            binding2doc args,
+            mbinding2doc args,
             pretty ":",
             ty2doc ty,
             opColor (pretty "=")
@@ -176,7 +176,7 @@ t2doc at (SLam _ args t) =
     sep
       [ sep
           [ keywordColor (pretty "fun"),
-            binding2doc args,
+            mbinding2doc args,
             opColor (pretty "->")
           ],
         nest 2 (t2doc False t)
@@ -191,7 +191,7 @@ t2doc at (SFix _ f args m) =
       [ sep
           [ keywordColor (pretty "fix"),
             binding2doc [f],
-            binding2doc args,
+            mbinding2doc args,
             opColor (pretty "->")
           ],
         nest 2 (t2doc False m)
@@ -224,6 +224,13 @@ t2doc at (SLet _ v t t') =
 t2doc at (SBinaryOp _ o a b) =
   parenIf at $
     t2doc True a <+> binary2doc o <+> t2doc True b
+
+mbinding2doc :: [Binding Name STy] -> Doc AnsiStyle
+mbinding2doc [] = pretty ""
+mbinding2doc [(x, ty)] =
+  parens (sep (map name2doc x ++ [pretty ":", ty2doc ty]))
+mbinding2doc ((x, ty) : xs) =
+  parens (sep (map name2doc x ++ [pretty ":", ty2doc ty])) <+> mbinding2doc xs
 
 binding2doc :: [(Name, STy)] -> Doc AnsiStyle
 binding2doc [] = pretty ""
