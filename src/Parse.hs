@@ -144,6 +144,13 @@ atom =
     <|> parens expr
     <|> printOp
 
+mbinding :: P ([Name], STy)
+mbinding = do
+  v <- many var
+  reservedOp ":"
+  ty <- typeP
+  return (v, ty)
+
 -- parsea un par (variable : tipo)
 binding :: P (Name, STy)
 binding = do
@@ -156,7 +163,7 @@ lam :: P STerm
 lam = do
   i <- getPos
   reserved "fun"
-  args <- many $ parens binding
+  args <- many $ parens mbinding
   reservedOp "->"
   t <- expr
   return (SLam i args t)
@@ -185,7 +192,7 @@ fix = do
   i <- getPos
   reserved "fix"
   (f, fty) <- parens binding
-  args <- many $ parens binding
+  args <- many $ parens mbinding
   reservedOp "->"
   t <- expr
   return (SFix i (f, fty) args t)
@@ -206,7 +213,7 @@ letexp = do
     )
     <|> ( do
             v <- var
-            args <- many $ parens binding
+            args <- many $ parens mbinding
             reservedOp ":"
             ty <- typeP
             reservedOp "="
@@ -243,7 +250,7 @@ declLet = do
     )
     <|> ( do
             v <- var
-            args <- many $ parens binding
+            args <- many $ parens mbinding
             reservedOp ":"
             ty <- typeP
             reservedOp "="

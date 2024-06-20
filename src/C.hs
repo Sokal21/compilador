@@ -1,10 +1,11 @@
-module C ( ir2C ) where
+module C ( ir2C, ccWrite ) where
 import Prettyprinter
 import Prettyprinter.Render.Terminal ( renderStrict )
 import IR
 import Lang
 import Data.Text (unpack)
 import Data.Char ( isAlpha, ord )
+import qualified Data.ByteString.Char8 as BS
 
 ty2doc :: IrTy -> Doc a
 ty2doc IrInt = pretty "uint64_t"
@@ -99,3 +100,6 @@ irPrintN x = pretty "fd4_printn" <> parens (exprstmt x) -- otro parens porque es
 -- Simplemente llamar a esta función con las irDecls.
 ir2C :: IrDecls -> String
 ir2C (IrDecls xs) = unpack . renderStrict . layoutSmart defaultLayoutOptions $ vsep (prelude : map decl2doc xs ++ [fd4Main xs])
+
+ccWrite :: IrDecls -> FilePath -> IO ()
+ccWrite bs filename = BS.writeFile filename (BS.pack (ir2C bs))

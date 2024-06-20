@@ -67,12 +67,12 @@ openAll gp ns (V p v) = case v of
 openAll gp ns (Const p c) = SConst (gp p) c
 openAll gp ns (Lam p x ty t) =
   let x' = freshen ns x
-   in SLam (gp p) [(x', freshSTy ty)] (openAll gp (x' : ns) (open x' t))
+   in SLam (gp p) [([x'], freshSTy ty)] (openAll gp (x' : ns) (open x' t))
 openAll gp ns (App p t u) = SApp (gp p) (openAll gp ns t) (openAll gp ns u)
 openAll gp ns (Fix p f fty x xty t) =
   let x' = freshen ns x
       f' = freshen (x' : ns) f
-   in SFix (gp p) (f', freshSTy fty) [(x', freshSTy xty)] (openAll gp (x : f : ns) (open2 f' x' t))
+   in SFix (gp p) (f', freshSTy fty) [([x'], freshSTy xty)] (openAll gp (x : f : ns) (open2 f' x' t))
 openAll gp ns (IfZ p c t e) = SIfZ (gp p) (openAll gp ns c) (openAll gp ns t) (openAll gp ns e)
 openAll gp ns (Print p str t) = SPrint (gp p) str (openAll gp ns t)
 openAll gp ns (BinaryOp p op t u) = SBinaryOp (gp p) op (openAll gp ns t) (openAll gp ns u)
@@ -160,7 +160,7 @@ t2doc at (SLetLam i (f, ty) args def body r) =
                   )
               ),
             name2doc f,
-            binding2doc args,
+            mbinding2doc args,
             pretty ":",
             ty2doc ty,
             opColor (pretty "=")
@@ -176,7 +176,7 @@ t2doc at (SLam _ args t) =
     sep
       [ sep
           [ keywordColor (pretty "fun"),
-            binding2doc args,
+            mbinding2doc args,
             opColor (pretty "->")
           ],
         nest 2 (t2doc False t)
@@ -191,7 +191,7 @@ t2doc at (SFix _ f args m) =
       [ sep
           [ keywordColor (pretty "fix"),
             binding2doc [f],
-            binding2doc args,
+            mbinding2doc args,
             opColor (pretty "->")
           ],
         nest 2 (t2doc False m)
@@ -225,6 +225,13 @@ t2doc at (SBinaryOp _ o a b) =
   parenIf at $
     t2doc True a <+> binary2doc o <+> t2doc True b
 
+mbinding2doc :: [Binding Name STy] -> Doc AnsiStyle
+mbinding2doc [] = pretty ""
+mbinding2doc [(x, ty)] =
+  parens (sep (map name2doc x ++ [pretty ":", ty2doc ty]))
+mbinding2doc ((x, ty) : xs) =
+  parens (sep (map name2doc x ++ [pretty ":", ty2doc ty])) <+> mbinding2doc xs
+
 binding2doc :: [(Name, STy)] -> Doc AnsiStyle
 binding2doc [] = pretty ""
 binding2doc [(x, ty)] =
@@ -233,19 +240,129 @@ binding2doc ((x, ty) : xs) =
   parens (sep [name2doc x, pretty ":", ty2doc ty]) <+> binding2doc xs
 
 -- | Pretty printing de términos (String)
-pp :: MonadFD4 m => TTerm -> m String
+pp :: (MonadFD4 m) => TTerm -> m String
 -- Uncomment to use the Show instance for Term
 {- pp = show -}
+
+recResugarTerm :: ResugarerTerm -> STerm -> (Bool, STerm)
+recResugarTerm f st@(SV _ _) = (False, st)
+recResugarTerm f st@(SConst _ _) = (False, st)
+recResugarTerm f (SLam i args t) = let (b, rt) = f t in (b, SLam i args rt)
+recResugarTerm f (SApp i lt rt) =
+  let (bl, rlt) = f lt
+      (br, rrt) = f rt
+   in (bl || br, SApp i rlt rrt)
+recResugarTerm f (SPrint i s t) = let (b, rt) = f t in (b, SPrint i s rt)
+recResugarTerm f (SBinaryOp i o lt rt) =
+  let (bl, rlt) = f lt
+      (br, rrt) = f rt
+   in (bl || br, SBinaryOp i o rlt rrt)
+recResugarTerm f (SFix i v args t) = let (b, rt) = f t in (b, SFix i v args rt)
+recResugarTerm f (SIfZ i ct tt et) =
+  let (bc, rct) = f ct
+      (bt, rtt) = f tt
+      (be, ret) = f et
+   in (bc || bt || be, SIfZ i ct tt et)
+recResugarTerm f (SLet i v lt rt) =
+  let (bl, rlt) = f lt
+      (br, rrt) = f rt
+   in (bl || br, SLet i v rlt rrt)
+recResugarTerm f (SLetLam i v args lt rt r) =
+  let (bl, rlt) = f lt
+      (br, rrt) = f rt
+   in (bl || br, SLetLam i v args rlt rrt r)
+
+rsugarFun :: ResugarerTerm
+rsugarFun (SLam i fa (SLam _ sa t)) = (True, SLam i (fa ++ sa) (snd $ rsugarFun t))
+rsugarFun x = recResugarTerm rsugarFun x
+
+rsugarFix :: ResugarerTerm
+rsugarFix (SFix i x fa (SLam _ sa t)) = (True, SFix i x (fa ++ sa) (snd $ rsugarFix t))
+rsugarFix x = recResugarTerm rsugarFix x
+
+rsugarLetLam :: ResugarerTerm
+rsugarLetLam (SLet i v (SLam _ args ft) rt) = (True, SLetLam i v args (snd $ rsugarLetLam ft) (snd $ rsugarLetLam rt) No)
+rsugarLetLam (SLet i _ (SFix _ vs args t) rt) = (True, SLetLam i vs args (snd $ rsugarLetLam t) (snd $ rsugarLetLam rt) Yes)
+rsugarLetLam x = recResugarTerm rsugarLetLam x
+
+combineArgs :: [Binding Name STy] -> (Bool, [Binding Name STy])
+combineArgs [] = (False, [])
+combineArgs [x] = (False, [x])
+combineArgs ((x, xty) : (y, yty) : args)
+  | xty == yty = (True, (x ++ y, xty) : snd (combineArgs args))
+  | otherwise = let (b, cargs) = combineArgs ((y, yty) : args) in (b, (x, xty) : cargs)
+
+rsugarMultBind :: ResugarerTerm
+rsugarMultBind (SLam i x t) =
+  let (b, cx) = combineArgs x
+      (bt, rt) = rsugarMultBind t
+   in (b || bt, SLam i cx rt)
+rsugarMultBind (SFix i x args t) =
+  let (b, cargs) = combineArgs args
+      (bt, rt) = rsugarMultBind t
+   in (b || bt, SFix i x cargs rt)
+rsugarMultBind (SLetLam i x args lt rt r) =
+  let (b, cargs) = combineArgs args
+      (bl, clt) = rsugarMultBind lt
+      (br, crt) = rsugarMultBind rt
+   in (b || bl || br, SLetLam i x cargs clt crt r)
+rsugarMultBind ft = recResugarTerm rsugarMultBind ft
+
+type ResugarerTerm = STerm -> (Bool, STerm)
+
+rsugarTermRec :: [ResugarerTerm] -> Bool -> STerm -> STerm
+rsugarTermRec ops c t
+  | c =
+      let ott = foldr (\op (cond, tt) -> let (c', t') = op tt in (cond || c', t')) (False, t) ops
+       in uncurry (rsugarTermRec ops) ott
+  | otherwise = t
+
+resugarerTerm :: STerm -> STerm
+resugarerTerm = rsugarTermRec [rsugarFun, rsugarFix, rsugarLetLam, rsugarMultBind] True
+
+type ResugarerDecl = SDecl STerm -> (Bool, SDecl STerm)
+
+rsugarDeclLam :: ResugarerDecl
+rsugarDeclLam (SDecl p n ty (SLam _ args v)) = (True, SDeclLam p n args ty v No)
+rsugarDeclLam (SDecl p n ty (SFix _ _ args v)) = (True, SDeclLam p n args ty v Yes)
+rsugarDeclLam x = (False, x)
+
+rsugarDeclFun :: ResugarerDecl
+rsugarDeclFun (SDeclLam p n args t (SLam _ bargs v) r) = (True, SDeclLam p n (args ++ bargs) t v r)
+rsugarDeclFun x = (False, x)
+
+rsugarDeclMulti :: ResugarerDecl
+rsugarDeclMulti (SDeclLam p n args t b r) = let (cb, cargs) = combineArgs args in (cb, SDeclLam p n cargs t b r)
+rsugarDeclMulti x = (False, x)
+
+applyResugarDecl :: SDecl STerm -> SDecl STerm
+applyResugarDecl (SDecl p n t b) = SDecl p n t (resugarerTerm b)
+applyResugarDecl (SDeclLam p n args t b r) = SDeclLam p n args t (resugarerTerm b) r
+applyResugarDecl x = x
+
+rsugarDeclRec :: [ResugarerDecl] -> Bool -> SDecl STerm -> SDecl STerm
+rsugarDeclRec ops c t
+  | c =
+      let ott = foldr (\op (cond, tt) -> let (c', t') = op tt in (cond || c', t')) (False, applyResugarDecl t) ops
+       in uncurry (rsugarDeclRec ops) ott
+  | otherwise = t
+
+resugarerDecl :: SDecl STerm -> SDecl STerm
+resugarerDecl = rsugarDeclRec [rsugarDeclLam, rsugarDeclFun, rsugarDeclMulti] True
+
 pp t = do
   gdecl <- gets glb
-  return (render . t2doc False $ openAll fst (map declName gdecl) t)
+  return (render . t2doc False $ resugarerTerm $ openAll fst (map declName gdecl) t)
 
 render :: Doc AnsiStyle -> String
 render = unpack . renderStrict . layoutSmart defaultLayoutOptions
 
--- | Pretty printing de declaraciones
-ppDecl :: MonadFD4 m => Decl TTerm -> m String
-ppDecl (TyDecl p n t) = do
+dt2sdt :: [Decl TTerm] -> Decl TTerm -> SDecl STerm
+dt2sdt _ (TyDecl p n t) = SDeclType p n (freshSTy t)
+dt2sdt gdecl (Decl p n b) = SDecl p n (freshSTy (getTy b)) (openAll fst (map declName gdecl) b)
+
+ppDecl' :: (MonadFD4 m) => SDecl STerm -> m String
+ppDecl' (SDeclType p n t) = do
   return
     ( render $
         sep
@@ -253,16 +370,40 @@ ppDecl (TyDecl p n t) = do
             name2doc n,
             defColor (pretty "=")
           ]
-          <+> nest 2 (ty2doc (freshSTy t))
+          <+> nest 2 (ty2doc t)
     )
-ppDecl (Decl p x t) = do
-  gdecl <- gets glb
+ppDecl' (SDecl p n t b) = do
   return
     ( render $
         sep
           [ defColor (pretty "let"),
-            name2doc x,
+            name2doc n,
+            defColor (pretty ":"),
+            ty2doc t,
             defColor (pretty "=")
           ]
-          <+> nest 2 (t2doc False (openAll fst (map declName gdecl) t))
+          <+> nest 2 (t2doc False (resugarerTerm b))
     )
+ppDecl' (SDeclLam p n args t b r) = do
+  return
+    ( render $
+        sep
+          ( (if match r then [defColor (pretty "let rec")] else [defColor (pretty "let")])
+              ++ [ name2doc n,
+                   defColor (pretty ":"),
+                   ty2doc t,
+                   defColor (pretty "=")
+                 ]
+          )
+          <+> nest 2 (t2doc False (resugarerTerm b))
+    )
+  where
+    match Yes = True
+    match _ = False
+
+-- | Pretty printing de declaraciones
+ppDecl :: (MonadFD4 m) => Decl TTerm -> m String
+ppDecl dec = do
+  gdecl <- gets glb
+  let sdec = resugarerDecl (dt2sdt gdecl dec)
+  ppDecl' sdec

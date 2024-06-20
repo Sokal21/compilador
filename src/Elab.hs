@@ -21,10 +21,10 @@ elabTy (SDeclTy a) = DeclTy a
 
 -- | 'elab' transforma variables ligadas en índices de de Bruijn
 -- en un término dado.
-elab :: MonadFD4 m => STerm -> m Term
+elab :: (MonadFD4 m) => STerm -> m Term
 elab = elab' []
 
-elab' :: MonadFD4 m => [Name] -> STerm -> m Term
+elab' :: (MonadFD4 m) => [Name] -> STerm -> m Term
 elab' env (SV p v) =
   -- Tenemos que ver si la variable es Global o es un nombre local
   -- En env llevamos la lista de nombres locales.
@@ -33,19 +33,25 @@ elab' env (SV p v) =
     else return $ V p (Global v)
 elab' _ (SConst p c) = return $ Const p c
 elab' env (SLam p [] t) = error "try to elab no params lam"
-elab' env (SLam p [(v, sty)] t) = do
+elab' env (SLam p (([], sty) : _) t) = error "type with no parameters"
+elab' env (SLam p [([v], sty)] t) = do
   e <- elab' (v : env) t
   return $ Lam p v (elabTy sty) (close v e)
-elab' env (SLam p ((v, sty) : args) t) = do
+elab' env (SLam p [(v : vs, sty)] t) = elab' env (SLam p [([v], sty), (vs, sty)] t)
+elab' env (SLam p (([v], sty) : args) t) = do
   e <- elab' (v : env) (SLam p args t)
   return $ Lam p v (elabTy sty) (close v e)
+elab' env (SLam p ((v : vs, sty) : args) t) = elab' env (SLam p ([([v], sty), (vs, sty)] ++ args) t)
 elab' env (SFix p (f, sfty) [] t) = error "try to elab no params fix"
-elab' env (SFix p (f, sfty) [(x, sxty)] t) = do
+elab' env (SFix p (f, sfty) (([], sty) : _) t) = error "type with no parameters"
+elab' env (SFix p (f, sfty) [([x], sxty)] t) = do
   e <- elab' (x : f : env) t
   return $ Fix p f (elabTy sfty) x (elabTy sxty) (close2 f x e)
-elab' env (SFix p (f, sfty) ((x, sxty) : args) t) = do
+elab' env (SFix p (f, sfty) [(x : xs, sxty)] t) = elab' env $ SLam p [([x], sxty), (xs, sxty)] t
+elab' env (SFix p (f, sfty) (([x], sxty) : args) t) = do
   e <- elab' (x : f : env) $ SLam p args t
   return $ Fix p f (elabTy sfty) x (elabTy sxty) (close2 f x e)
+elab' env (SFix p (f, sfty) ((x : xs, sxty) : args) t) = elab' env $ SLam p ([([x], sxty), (xs, sxty)] ++ args) t
 elab' env (SIfZ p c t e) = do
   b <- elab' env c
   l <- elab' env t
@@ -74,11 +80,12 @@ elab' env (SLetLam p (f, fty) args d b No) =
 elab' env (SLetLam p (f, fty) args d b Yes) =
   elab' env $ SLet p (f, types args fty) (SFix p (f, fty) args d) b
 
-types :: [(Name, STy)] -> STy -> STy
+types :: [Binding Name STy] -> STy -> STy
 types args v = foldr f v args
-  where f (_, vty) = SFunTy vty
+  where
+    f (_, vty) = SFunTy vty
 
-elabDecl :: MonadFD4 m => SDecl STerm -> m (Decl Term)
+elabDecl :: (MonadFD4 m) => SDecl STerm -> m (Decl Term)
 elabDecl (SDecl p n sty sb) = do
   b <- elab sb
   return $ Decl p n b
@@ -86,8 +93,8 @@ elabDecl (SDeclType p n sty) = do
   return $ TyDecl p n (elabTy sty)
 elabDecl (SDeclLam p n args ty b No) =
   elabDecl (SDecl p n ty (SLam p args b))
-elabDecl (SDeclLam p n [] ty b Yes) = error "un parametro en fix es necesario" 
-elabDecl (SDeclLam p n args@[(x,xty)] ty b Yes) =
+elabDecl (SDeclLam p n [] ty b Yes) = error "un parametro en fix es necesario"
+elabDecl (SDeclLam p n args@[(x, xty)] ty b Yes) =
   elabDecl (SDecl p n ty (SFix p (n, SFunTy xty ty) args b))
-elabDecl (SDeclLam p n ((x,xty):xs) ty b Yes) =
-  elabDecl (SDeclLam p n [(x,xty)] (types xs ty) (SLam p xs b) Yes)
+elabDecl (SDeclLam p n ((x, xty) : xs) ty b Yes) =
+  elabDecl (SDeclLam p n [(x, xty)] (types xs ty) (SLam p xs b) Yes)

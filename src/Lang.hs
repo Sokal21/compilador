@@ -21,17 +21,19 @@ import Common (Pos)
 import Data.List.Extra (nubSort)
 
 -- | AST the términos superficiales
+type Binding var ty = ([var], ty)
+
 data STm info ty var
   = SV info var
   | SConst info Const
-  | SLam info [(var, ty)] (STm info ty var)
+  | SLam info [Binding var ty] (STm info ty var)
   | SApp info (STm info ty var) (STm info ty var)
   | SPrint info String (STm info ty var)
   | SBinaryOp info BinaryOp (STm info ty var) (STm info ty var)
-  | SFix info (var, ty) [(var, ty)] (STm info ty var)
+  | SFix info (var, ty) [Binding var ty] (STm info ty var)
   | SIfZ info (STm info ty var) (STm info ty var) (STm info ty var)
   | SLet info (var, ty) (STm info ty var) (STm info ty var)
-  | SLetLam info (var, ty) [(var, ty)] (STm info ty var) (STm info ty var) Rec
+  | SLetLam info (var, ty) [Binding var ty] (STm info ty var) (STm info ty var) Rec
   deriving (Show, Functor)
 
 data Rec = Yes | No deriving (Show)
@@ -74,7 +76,7 @@ data SDecl a
   | SDeclLam
       { sDeclLamPos :: Pos,
         sDeclLamName :: Name,
-        sDeclLamArg :: [(Name, STy)],
+        sDeclLamArg :: [Binding Name STy],
         sDeclLamTy :: STy,
         sDeclLamBody :: a,
         sDeclLamRec :: Rec
